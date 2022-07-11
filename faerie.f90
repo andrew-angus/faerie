@@ -46,7 +46,7 @@ END TYPE
 TYPE(gp_obj) :: gp
 
 ! Shared data
-INTEGER(fi) :: i,j
+INTEGER(fi) :: i,j,info
 REAL(dp), DIMENSION(:,:), ALLOCATABLE :: dist_bnds, y2d
 REAL(dp), DIMENSION(:), ALLOCATABLE :: lowtri, alpha
 
@@ -90,13 +90,13 @@ SUBROUTINE read_data()
   ! Read variables
   ALLOCATE(gp%il(dimlens(1)),gp%x(dimlens(1),dimlens(3)),y2d(dimlens(2),dimlens(3)))
   ALLOCATE(lowtri(dimlens(3)*(dimlens(3)+1)/2),dist_bnds(dimlens(4),dimlens(1)))
-  ALLOCATE(gp%y(dimlens(3)))
+  ALLOCATE(gp%y(dimlens(3)),alpha(dimlens(3)))
   CALL check(NF90_GET_VAR(fid, varids(1), gp%il))
   CALL check(NF90_GET_VAR(fid, varids(2), gp%x))
   CALL check(NF90_GET_VAR(fid, varids(3), y2d))
   CALL check(NF90_GET_VAR(fid, varids(4), dist_bnds))
 
-  ! Close the file, freeing all resources.
+  ! Close file
   CALL check(NF90_CLOSE(fid))
 
   ! Assign GP function pointer and dimensions
@@ -159,11 +159,15 @@ END SUBROUTINE
 ! For a fixed dataset these are also fixed
 SUBROUTINE cholesky_solve()
 
+  ! Copy alpha array with y to be overwritten 
+  alpha = gp%y
+
   ! Obtain lower triangle of symmetric data covariance matrix
   CALL data_covariances()
   
   ! LAPACK Cholesky solve
-  CONTINUE
+  CALL dppsv('L',gp%nsamps,1,lowtri,alpha,gp%nsamps,info)
+
 END SUBROUTINE
 
 ! Make predictions at new x points
@@ -209,6 +213,7 @@ END FUNCTION
 
 END MODULE
 
+! Test program
 PROGRAM main
 
   USE faerie
@@ -217,8 +222,8 @@ PROGRAM main
 
   CALL cholesky_solve()
 
-  PRINT *, lowtri(:7), gp%noise
+  PRINT *, alpha
 
-  DEALLOCATE(gp%il,gp%x,gp%y,dist_bnds)
+  DEALLOCATE(gp%il,gp%x,gp%y,dist_bnds,lowtri)
 
 END PROGRAM
