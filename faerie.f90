@@ -19,10 +19,8 @@ CHARACTER(LEN=1), PARAMETER :: creturn = ACHAR(13)
 
 ! Kernel function interface
 INTERFACE
-  FUNCTION kernel(l,var)
+  FUNCTION kernel()
     USE ISO_FORTRAN_ENV
-    REAL(REAL64), INTENT(IN) :: var
-    REAL(REAL64), INTENT(IN), DIMENSION(:) :: l
     REAL(REAL64) :: kernel
   END FUNCTION
 END INTERFACE
@@ -93,7 +91,17 @@ SUBROUTINE read_data()
   call check(NF90_CLOSE(fid))
 
   ! Assign GP function pointer
-  PRINT *, kern, gp%var, gp%noise
+  IF (kern == "rbf") THEN
+    gp%kern => rbf
+  ELSE IF (kern == "Mat52") THEN
+    gp%kern => matern52
+  ELSE IF (kern == "Mat32") THEN
+    gp%kern => matern32
+  ELSE IF (kern == "Exponential") THEN
+    gp%kern => exponential
+  ELSE
+    STOP "Read kernel name invalid: must be one of rbf, Mat52, Mat32, Exponential"
+  END IF
   
 END SUBROUTINE
 
