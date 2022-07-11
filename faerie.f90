@@ -31,7 +31,7 @@ TYPE gp_obj
   REAL(dp) :: noise, var
   REAL(dp), DIMENSION(:), ALLOCATABLE :: l
   REAL(dp), DIMENSION(:,:), ALLOCATABLE :: x
-  REAL(dp), DIMENSION(:), ALLOCATABLE :: y
+  REAL(dp), DIMENSION(:,:), ALLOCATABLE :: y
   INTEGER(fi) :: nx
   PROCEDURE(kernel), POINTER, NOPASS :: kern => NULL()
   !PROCEDURE(xconvert), POINTER, NOPASS :: xcon => NULL()
@@ -43,6 +43,7 @@ TYPE(gp_obj) :: gp
 
 ! Shared data
 INTEGER(fi) :: i,j
+REAL(dp), DIMENSION(:,:), ALLOCATABLE :: dist_bnds
 
 CONTAINS
 
@@ -53,21 +54,16 @@ SUBROUTINE read_data()
   CHARACTER (LEN = *), PARAMETER :: fname = "gp.nc"
   CHARACTER (LEN = *), DIMENSION(4), PARAMETER :: &
     dimlabs = (/"inputs ","outputs","samples","bounds "/)
-  CHARACTER (LEN = *), DIMENSION(5), PARAMETER :: &
+  CHARACTER (LEN = *), DIMENSION(4), PARAMETER :: &
     varlabs = (/"lengthscales  ","input_samples ","output_samples", &
-                "dist_bounds   ","dists         "/)
+                "dist_bounds   "/)
 
-  ! IDs
+  ! IDs and lengths
   INTEGER :: fid,attlen
-  INTEGER, DIMENSION(4) :: dimids, dimlens
-  INTEGER, DIMENSION(5) :: varids
+  INTEGER, DIMENSION(4) :: dimids, dimlens, varids
 
-  ! Outputs
+  ! Local output
   CHARACTER(:),ALLOCATABLE :: kern
-
-  ! We are reading 2D data, a 6 x 12 grid.
-  !integer, parameter :: NX = 6, NY = 12
-  !integer :: data_in(NY, NX)
 
   ! Open file
   CALL check(NF90_OPEN(fname, NF90_NOWRITE, fid))
@@ -79,22 +75,23 @@ SUBROUTINE read_data()
   CALL check(NF90_GET_ATT(fid,NF90_GLOBAL,"var",gp%var))
   CALL check(NF90_GET_ATT(fid,NF90_GLOBAL,"noise",gp%noise))
 
-  ! Get dimension IDs and lengths
+  ! Get dimension/variable IDs and lengths
   DO i = 1, 4
     CALL check(NF90_INQ_DIMID(fid,TRIM(dimlabs(i)),dimids(i)))
     CALL check(NF90_INQUIRE_DIMENSION(fid,dimids(i),len=dimlens(i)))
-  END DO
-
-  ! Get variable IDs
-  DO i = 1, 5
     CALL check(NF90_INQ_VARID(fid,TRIM(varlabs(i)),varids(i)))
   END DO
-  !call check(NF90_INQ_VARID(fid, "lengthscales, varid) )
 
-  !call check(NF90_GET_VAR(fid, varid, data_in) )
+  ! Read variables
+  ALLOCATE(gp%l(dimlens(1)),gp%x(dimlens(1),dimlens(3)),gp%y(dimlens(2),dimlens(3)))
+  ALLOCATE(dist_bnds(dimlens(4),dimlens(1)))
+  CALL check(NF90_GET_VAR(fid, varids(1), gp%l))
+  CALL check(NF90_GET_VAR(fid, varids(2), gp%x))
+  CALL check(NF90_GET_VAR(fid, varids(3), gp%y))
+  CALL check(NF90_GET_VAR(fid, varids(4), dist_bnds))
 
   ! Close the file, freeing all resources.
-  call check(NF90_CLOSE(fid))
+  CALL check(NF90_CLOSE(fid))
 
   ! Assign GP function pointer
   IF (kern == "rbf") THEN
@@ -156,5 +153,7 @@ PROGRAM main
   USE faerie
 
   CALL read_data()
+
+  DEALLOCATE(gp%l,gp%x,gp%y,dist_bnds)
 
 END PROGRAM
