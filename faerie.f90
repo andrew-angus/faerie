@@ -15,12 +15,16 @@ INTEGER, PARAMETER :: fi = INT32
 REAL(dp), PARAMETER :: pi = ACOS(-1.0_dp)
 REAL(dp), PARAMETER :: small = 1e-30_dp
 REAL(dp), PARAMETER :: releps = 1.0e-6_dp
+REAL(dp), PARAMETER :: rat53 = 5.0_dp/3.0_dp
+REAL(dp), PARAMETER :: sqrt3 = SQRT(3.0_dp)
+REAL(dp), PARAMETER :: sqrt5 = SQRT(5.0_dp)
 CHARACTER(LEN=1), PARAMETER :: creturn = ACHAR(13)
 
 ! Kernel function interface
 INTERFACE
-  FUNCTION kernel()
+  FUNCTION kernel(x1,x2)
     USE ISO_FORTRAN_ENV
+    REAL(REAL64), DIMENSION(:), INTENT(IN) :: x1,x2
     REAL(REAL64) :: kernel
   END FUNCTION
 END INTERFACE
@@ -28,12 +32,12 @@ END INTERFACE
 ! GP object
 ! single y output, zero prior mean, for now
 TYPE gp_obj
-  REAL(dp) :: noise, var
-  REAL(dp), DIMENSION(:), ALLOCATABLE :: l
-  REAL(dp), DIMENSION(:,:), ALLOCATABLE :: x
-  REAL(dp), DIMENSION(:,:), ALLOCATABLE :: y
-  INTEGER(fi) :: nx
-  PROCEDURE(kernel), POINTER, NOPASS :: kern => NULL()
+  REAL(dp) :: noise, var ! Gaussian noise and kernel variance
+  REAL(dp), DIMENSION(:), ALLOCATABLE :: il ! Inverse lengthscales
+  REAL(dp), DIMENSION(:,:), ALLOCATABLE :: x ! Input samples
+  REAL(dp), DIMENSION(:,:), ALLOCATABLE :: y ! Output samples
+  INTEGER(fi) :: nx,nsamps ! Number of inputs and samples
+  PROCEDURE(kernel), POINTER, NOPASS :: kern => NULL() ! Kernel function pointer
   !PROCEDURE(xconvert), POINTER, NOPASS :: xcon => NULL()
   !PROCEDURE(yconvert), POINTER, NOPASS :: ycon => NULL()
   !PROCEDURE(xrevert), POINTER, NOPASS :: xrev => NULL()
@@ -83,9 +87,9 @@ SUBROUTINE read_data()
   END DO
 
   ! Read variables
-  ALLOCATE(gp%l(dimlens(1)),gp%x(dimlens(1),dimlens(3)),gp%y(dimlens(2),dimlens(3)))
+  ALLOCATE(gp%il(dimlens(1)),gp%x(dimlens(1),dimlens(3)),gp%y(dimlens(2),dimlens(3)))
   ALLOCATE(dist_bnds(dimlens(4),dimlens(1)))
-  CALL check(NF90_GET_VAR(fid, varids(1), gp%l))
+  CALL check(NF90_GET_VAR(fid, varids(1), gp%il))
   CALL check(NF90_GET_VAR(fid, varids(2), gp%x))
   CALL check(NF90_GET_VAR(fid, varids(3), gp%y))
   CALL check(NF90_GET_VAR(fid, varids(4), dist_bnds))
@@ -93,7 +97,10 @@ SUBROUTINE read_data()
   ! Close the file, freeing all resources.
   CALL check(NF90_CLOSE(fid))
 
-  ! Assign GP function pointer
+  ! Assign GP function pointer and dimensions
+  gp%nx = dimlens(1)
+  gp%nsamps = dimlens(3)
+  gp%il = 1/gp%il
   IF (kern == "rbf") THEN
     gp%kern => rbf
   ELSE IF (kern == "Mat52") THEN
@@ -126,21 +133,36 @@ SUBROUTINE predict()
 END SUBROUTINE
 
 ! Kernel functions
-FUNCTION rbf()
+FUNCTION rbf(x1,x2)
+  REAL(dp), DIMENSION(:), INTENT(IN) :: x1,x2
+  REAL(dp), DIMENSION(gp%nx) :: r
   REAL(dp) :: rbf
-  rbf = 0.0_dp
+  r = x1 - x2
+  rbf = gp%var*EXP(-0.5_dp*DOT_PRODUCT(r*gp%il**2,r))
 END FUNCTION
-FUNCTION matern52()
-  REAL(dp) :: matern52
-  matern52 = 0.0_dp
+FUNCTION matern52(x1,x2)
+  REAL(dp), DIMENSION(:), INTENT(IN) :: x1,x2
+  REAL(dp), DIMENSION(gp%nx) :: r
+  REAL(dp) :: matern52, ril
+  r = ABS(x1 - x2)
+  ril = sqrt5*DOT_PRODUCT(r,gp%il)
+  matern52 = gp%var*(1+ril+rat53*DOT_PRODUCT(r*gp%il**2,r))*EXP(-ril)
 END FUNCTION
-FUNCTION matern32()
-  REAL(dp) :: matern32
-  matern32 = 0.0_dp
+FUNCTION matern32(x1,x2)
+  REAL(dp), DIMENSION(:), INTENT(IN) :: x1,x2
+  REAL(dp), DIMENSION(gp%nx) :: r
+  REAL(dp) :: matern32, ril
+  r = ABS(x1 - x2)
+  ril = sqrt3*DOT_PRODUCT(r,gp%il)
+  matern32 = gp%var*(1+ril)*EXP(-ril)
 END FUNCTION
-FUNCTION exponential()
-  REAL(dp) :: exponential
-  exponential = 0.0_dp
+FUNCTION exponential(x1,x2)
+  REAL(dp), DIMENSION(:), INTENT(IN) :: x1,x2
+  REAL(dp), DIMENSION(gp%nx) :: r
+  REAL(dp) :: exponential, ril
+  r = ABS(x1 - x2)
+  ril = DOT_PRODUCT(r,gp%il)
+  exponential = gp%var*EXP(-ril)
 END FUNCTION
 
 ! x conversion/reversion functions
@@ -154,6 +176,6 @@ PROGRAM main
 
   CALL read_data()
 
-  DEALLOCATE(gp%l,gp%x,gp%y,dist_bnds)
+  DEALLOCATE(gp%il,gp%x,gp%y,dist_bnds)
 
 END PROGRAM
