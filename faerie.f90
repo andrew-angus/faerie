@@ -49,6 +49,7 @@ TYPE(gp_obj) :: gp
 INTEGER(fi) :: i,j,info
 REAL(dp), DIMENSION(:,:), ALLOCATABLE :: dist_bnds, y2d
 REAL(dp), DIMENSION(:), ALLOCATABLE :: lowtri, alpha
+REAL(dp) :: ymean, yvar
 
 CONTAINS
 
@@ -155,7 +156,7 @@ SUBROUTINE data_covariances()
 END SUBROUTINE
 
 ! Use LAPACK Cholesky decomposition solver to obtain
-! (K+v_nI)^-1.y and L (where K+v_nI = LL^T)
+! alpha = (K+v_nI)^-1.y and L (where K+v_nI = LL^T)
 ! For a fixed dataset these are also fixed
 SUBROUTINE cholesky_solve()
 
@@ -171,8 +172,28 @@ SUBROUTINE cholesky_solve()
 END SUBROUTINE
 
 ! Make predictions at new x points
-SUBROUTINE predict()
-  CONTINUE
+! Single x vector for now
+SUBROUTINE predict(x,ypmean,ypvar)
+
+  REAL(dp), DIMENSION(:), INTENT(IN) :: x
+  REAL(dp), INTENT(OUT) :: ypmean, ypvar
+
+  REAL(dp), DIMENSION(gp%nsamps) :: kstar
+
+  ! Get kstar
+  DO i = 1, gp%nsamps
+    kstar(i) = gp%kern(gp%x(:,i),x)
+  END DO
+
+  ! Get mean prediction
+  ypmean = DOT_PRODUCT(kstar,alpha)
+
+  ! LAPACK solve for variance vector
+  CALL dtpsv('L','N','N',gp%nsamps,lowtri,kstar,1)
+  
+  ! Get variance prediction
+  ypvar = gp%kern(x,x) - DOT_PRODUCT(kstar,kstar)
+
 END SUBROUTINE
 
 ! Kernel functions
@@ -218,12 +239,17 @@ PROGRAM main
 
   USE faerie
 
+  REAL(dp), DIMENSION(7), PARAMETER :: xnew = (/ 0.50532948, 0.29164443, &
+    0.7720734, 0.45070311, 0.16895283, 0.96262528, 0.96677354 /)
+
   CALL read_data()
 
   CALL cholesky_solve()
 
-  PRINT *, alpha
+  CALL predict(xnew,ymean,yvar)
 
-  DEALLOCATE(gp%il,gp%x,gp%y,dist_bnds,lowtri)
+  PRINT *, ymean, yvar
+
+  DEALLOCATE(gp%il,gp%x,gp%y,dist_bnds,lowtri,alpha)
 
 END PROGRAM
