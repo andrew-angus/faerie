@@ -51,18 +51,16 @@ SUBROUTINE read_data()
 
   ! Known labels
   CHARACTER (LEN = *), PARAMETER :: fname = "gp.nc"
-  !CHARACTER (LEN = *), DIMENSION(3), PARAMETER :: &
-  !  attlabs = (/"kernel","var","noise"/)
   CHARACTER (LEN = *), DIMENSION(4), PARAMETER :: &
     dimlabs = (/"inputs ","outputs","samples","bounds "/)
-  !CHARACTER (LEN = *), DIMENSION(4), PARAMETER :: &
-  !  varlabs = (/"lengthscales","input_samples","output_samples", &
-  !              "dist_bounds","dists"/)
+  CHARACTER (LEN = *), DIMENSION(5), PARAMETER :: &
+    varlabs = (/"lengthscales  ","input_samples ","output_samples", &
+                "dist_bounds   ","dists         "/)
 
   ! IDs
   INTEGER :: fid,attlen
   INTEGER, DIMENSION(4) :: dimids, dimlens
-  !INTEGER, DIMENSION(5) :: varids
+  INTEGER, DIMENSION(5) :: varids
 
   ! Outputs
   CHARACTER(:),ALLOCATABLE :: kern
@@ -88,9 +86,11 @@ SUBROUTINE read_data()
   END DO
 
   ! Get variable IDs
-  !call check(NF90_INQ_VARID(fid, "data", varid) )
+  DO i = 1, 5
+    CALL check(NF90_INQ_VARID(fid,TRIM(varlabs(i)),varids(i)))
+  END DO
+  !call check(NF90_INQ_VARID(fid, "lengthscales, varid) )
 
-  ! Read the data.
   !call check(NF90_GET_VAR(fid, varid, data_in) )
 
   ! Close the file, freeing all resources.
