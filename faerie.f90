@@ -53,15 +53,15 @@ SUBROUTINE read_data()
   CHARACTER (LEN = *), PARAMETER :: fname = "gp.nc"
   !CHARACTER (LEN = *), DIMENSION(3), PARAMETER :: &
   !  attlabs = (/"kernel","var","noise"/)
-  !CHARACTER (LEN = *), DIMENSION(4), PARAMETER :: &
-  !  dimlabs = (/"inputs","outputs","samples","bounds"/)
+  CHARACTER (LEN = *), DIMENSION(4), PARAMETER :: &
+    dimlabs = (/"inputs ","outputs","samples","bounds "/)
   !CHARACTER (LEN = *), DIMENSION(4), PARAMETER :: &
   !  varlabs = (/"lengthscales","input_samples","output_samples", &
   !              "dist_bounds","dists"/)
 
   ! IDs
   INTEGER :: fid,attlen
-  !INTEGER, DIMENSION(3) :: attids
+  INTEGER, DIMENSION(4) :: dimids, dimlens
   !INTEGER, DIMENSION(5) :: varids
 
   ! Outputs
@@ -80,6 +80,12 @@ SUBROUTINE read_data()
   CALL check(NF90_GET_ATT(fid,NF90_GLOBAL,"kernel",kern))
   CALL check(NF90_GET_ATT(fid,NF90_GLOBAL,"var",gp%var))
   CALL check(NF90_GET_ATT(fid,NF90_GLOBAL,"noise",gp%noise))
+
+  ! Get dimension IDs and lengths
+  DO i = 1, 4
+    CALL check(NF90_INQ_DIMID(fid,TRIM(dimlabs(i)),dimids(i)))
+    CALL check(NF90_INQUIRE_DIMENSION(fid,dimids(i),len=dimlens(i)))
+  END DO
 
   ! Get variable IDs
   !call check(NF90_INQ_VARID(fid, "data", varid) )
