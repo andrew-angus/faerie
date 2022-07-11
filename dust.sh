@@ -9,9 +9,10 @@ fcom=gfortran
 fflags="-g -fcheck=all -fbacktrace -Wall -Wextra -O0 -pedantic"
 nfflags=`nf-config --fflags`
 nfflibs=`nf-config --flibs`
+lflibs="-llapack -lblas"
 
 # Compile command
-$fcom $fflags $nfflags $ifiles $nfflibs -o $ofile
+$fcom $fflags $nfflags $ifiles $nfflibs $lflibs -o $ofile
 
 # Optionally run
 if [[ $1 == 'run' ]]

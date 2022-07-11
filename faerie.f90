@@ -35,7 +35,7 @@ TYPE gp_obj
   REAL(dp) :: noise, var ! Gaussian noise and kernel variance
   REAL(dp), DIMENSION(:), ALLOCATABLE :: il ! Inverse lengthscales
   REAL(dp), DIMENSION(:,:), ALLOCATABLE :: x ! Input samples
-  REAL(dp), DIMENSION(:,:), ALLOCATABLE :: y ! Output samples
+  REAL(dp), DIMENSION(:), ALLOCATABLE :: y ! Output samples
   INTEGER(fi) :: nx,nsamps ! Number of inputs and samples
   PROCEDURE(kernel), POINTER, NOPASS :: kern => NULL() ! Kernel function pointer
   !PROCEDURE(xconvert), POINTER, NOPASS :: xcon => NULL()
@@ -47,11 +47,12 @@ TYPE(gp_obj) :: gp
 
 ! Shared data
 INTEGER(fi) :: i,j
-REAL(dp), DIMENSION(:,:), ALLOCATABLE :: dist_bnds
+REAL(dp), DIMENSION(:,:), ALLOCATABLE :: dist_bnds, y2d
+REAL(dp), DIMENSION(:), ALLOCATABLE :: lowtri, alpha
 
 CONTAINS
 
-! Read in dataset, distributions, and gp params
+! Read in dataset, distributions, and gp params from NetCDF file
 SUBROUTINE read_data()
 
   ! Known labels
@@ -87,11 +88,12 @@ SUBROUTINE read_data()
   END DO
 
   ! Read variables
-  ALLOCATE(gp%il(dimlens(1)),gp%x(dimlens(1),dimlens(3)),gp%y(dimlens(2),dimlens(3)))
-  ALLOCATE(dist_bnds(dimlens(4),dimlens(1)))
+  ALLOCATE(gp%il(dimlens(1)),gp%x(dimlens(1),dimlens(3)),y2d(dimlens(2),dimlens(3)))
+  ALLOCATE(lowtri(dimlens(3)*(dimlens(3)+1)/2),dist_bnds(dimlens(4),dimlens(1)))
+  ALLOCATE(gp%y(dimlens(3)))
   CALL check(NF90_GET_VAR(fid, varids(1), gp%il))
   CALL check(NF90_GET_VAR(fid, varids(2), gp%x))
-  CALL check(NF90_GET_VAR(fid, varids(3), gp%y))
+  CALL check(NF90_GET_VAR(fid, varids(3), y2d))
   CALL check(NF90_GET_VAR(fid, varids(4), dist_bnds))
 
   ! Close the file, freeing all resources.
@@ -101,6 +103,7 @@ SUBROUTINE read_data()
   gp%nx = dimlens(1)
   gp%nsamps = dimlens(3)
   gp%il = 1/gp%il
+  gp%y = y2d(1,:)
   IF (kern == "rbf") THEN
     gp%kern => rbf
   ELSE IF (kern == "Mat52") THEN
@@ -112,6 +115,9 @@ SUBROUTINE read_data()
   ELSE
     STOP "Read kernel name invalid: must be one of rbf, Mat52, Mat32, Exponential"
   END IF
+
+  ! Deallocate temp arrays
+  DEALLOCATE(kern,y2d)
   
 END SUBROUTINE
 
@@ -125,6 +131,39 @@ SUBROUTINE check(stat)
     STOP "Stopped"
   END IF
 
+END SUBROUTINE
+
+! Evaluate covariance matrix for input samples dataset
+SUBROUTINE data_covariances()
+
+  INTEGER(fi) :: cnt
+
+  ! Evaluate kernel at each unique combination of input data vectors
+  ! In column order by lower triangle
+  cnt = 1
+  DO i = 1, gp%nsamps
+    DO j = i, gp%nsamps
+      lowtri(cnt) = gp%kern(gp%x(:,i),gp%x(:,j)) 
+      ! Add noise on diagonal
+      IF (i == j) THEN
+        lowtri(cnt) = lowtri(cnt) + gp%noise
+      END IF
+      cnt = cnt + 1
+    END DO
+  END DO
+
+END SUBROUTINE
+
+! Use LAPACK Cholesky decomposition solver to obtain
+! (K+v_nI)^-1.y and L (where K+v_nI = LL^T)
+! For a fixed dataset these are also fixed
+SUBROUTINE cholesky_solve()
+
+  ! Obtain lower triangle of symmetric data covariance matrix
+  CALL data_covariances()
+  
+  ! LAPACK Cholesky solve
+  CONTINUE
 END SUBROUTINE
 
 ! Make predictions at new x points
@@ -175,6 +214,10 @@ PROGRAM main
   USE faerie
 
   CALL read_data()
+
+  CALL cholesky_solve()
+
+  PRINT *, lowtri(:7), gp%noise
 
   DEALLOCATE(gp%il,gp%x,gp%y,dist_bnds)
 
