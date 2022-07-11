@@ -79,8 +79,9 @@ SUBROUTINE read_data()
   ! Get global attributes
   CALL check(NF90_INQUIRE_ATTRIBUTE(fid,NF90_GLOBAL,"kernel",len=attlen))
   ALLOCATE(CHARACTER(attlen)::kern)
-  !PRINT *, attlen
   CALL check(NF90_GET_ATT(fid,NF90_GLOBAL,"kernel",kern))
+  CALL check(NF90_GET_ATT(fid,NF90_GLOBAL,"var",gp%var))
+  CALL check(NF90_GET_ATT(fid,NF90_GLOBAL,"noise",gp%noise))
 
   ! Get variable IDs
   !call check(NF90_INQ_VARID(fid, "data", varid) )
@@ -92,7 +93,7 @@ SUBROUTINE read_data()
   call check(NF90_CLOSE(fid))
 
   ! Assign GP function pointer
-  PRINT *, kern
+  PRINT *, kern, gp%var, gp%noise
   
 END SUBROUTINE
 
