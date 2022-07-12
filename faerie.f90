@@ -16,6 +16,7 @@ REAL(dp), PARAMETER :: pi = ACOS(-1.0_dp)
 REAL(dp), PARAMETER :: small = 1e-30_dp
 REAL(dp), PARAMETER :: releps = 1.0e-6_dp
 REAL(dp), PARAMETER :: rat53 = 5.0_dp/3.0_dp
+REAL(dp), PARAMETER :: rat13 = 1.0_dp/3.0_dp
 REAL(dp), PARAMETER :: sqrt3 = SQRT(3.0_dp)
 REAL(dp), PARAMETER :: sqrt5 = SQRT(5.0_dp)
 CHARACTER(LEN=1), PARAMETER :: creturn = ACHAR(13)
@@ -89,7 +90,7 @@ SUBROUTINE read_data()
   END DO
 
   ! Read variables
-  ALLOCATE(gp%il(dimlens(1)),gp%x(dimlens(1),dimlens(3)),y2d(dimlens(2),dimlens(3)))
+  ALLOCATE(gp%il(dimlens(1)),gp%x(dimlens(3),dimlens(1)),y2d(dimlens(3),dimlens(2)))
   ALLOCATE(lowtri(dimlens(3)*(dimlens(3)+1)/2),dist_bnds(dimlens(4),dimlens(1)))
   ALLOCATE(gp%y(dimlens(3)),alpha(dimlens(3)))
   CALL check(NF90_GET_VAR(fid, varids(1), gp%il))
@@ -104,7 +105,7 @@ SUBROUTINE read_data()
   gp%nx = dimlens(1)
   gp%nsamps = dimlens(3)
   gp%il = 1/gp%il
-  gp%y = y2d(1,:)
+  gp%y = y2d(:,1)
   IF (kern == "rbf") THEN
     gp%kern => rbf
   ELSE IF (kern == "Mat52") THEN
@@ -144,9 +145,9 @@ SUBROUTINE data_covariances()
   cnt = 1
   DO i = 1, gp%nsamps
     DO j = i, gp%nsamps
-      lowtri(cnt) = gp%kern(gp%x(:,i),gp%x(:,j)) 
-      ! Add noise on diagonal
+      lowtri(cnt) = gp%kern(gp%x(i,:),gp%x(j,:)) 
       IF (i == j) THEN
+        ! Add noise on diagonal
         lowtri(cnt) = lowtri(cnt) + gp%noise
       END IF
       cnt = cnt + 1
@@ -182,7 +183,7 @@ SUBROUTINE predict(x,ypmean,ypvar)
 
   ! Get kstar
   DO i = 1, gp%nsamps
-    kstar(i) = gp%kern(gp%x(:,i),x)
+    kstar(i) = gp%kern(gp%x(i,:),x)
   END DO
 
   ! Get mean prediction
@@ -201,31 +202,31 @@ FUNCTION rbf(x1,x2)
   REAL(dp), DIMENSION(:), INTENT(IN) :: x1,x2
   REAL(dp), DIMENSION(gp%nx) :: r
   REAL(dp) :: rbf
-  r = x1 - x2
-  rbf = gp%var*EXP(-0.5_dp*DOT_PRODUCT(r*gp%il**2,r))
+  r = (x1 - x2)*gp%il
+  rbf = gp%var*EXP(-0.5_dp*DOT_PRODUCT(r,r))
 END FUNCTION
 FUNCTION matern52(x1,x2)
   REAL(dp), DIMENSION(:), INTENT(IN) :: x1,x2
   REAL(dp), DIMENSION(gp%nx) :: r
   REAL(dp) :: matern52, ril
-  r = ABS(x1 - x2)
-  ril = sqrt5*DOT_PRODUCT(r,gp%il)
-  matern52 = gp%var*(1+ril+rat53*DOT_PRODUCT(r*gp%il**2,r))*EXP(-ril)
+  r = (x1 - x2)*gp%il
+  ril = sqrt5*SQRT(DOT_PRODUCT(r,r))
+  matern52 = gp%var*(1+ril+rat13*ril**2)*EXP(-ril)
 END FUNCTION
 FUNCTION matern32(x1,x2)
   REAL(dp), DIMENSION(:), INTENT(IN) :: x1,x2
   REAL(dp), DIMENSION(gp%nx) :: r
   REAL(dp) :: matern32, ril
-  r = ABS(x1 - x2)
-  ril = sqrt3*DOT_PRODUCT(r,gp%il)
+  r = (x1 - x2)*gp%il
+  ril = sqrt5*SQRT(DOT_PRODUCT(r,r))
   matern32 = gp%var*(1+ril)*EXP(-ril)
 END FUNCTION
 FUNCTION exponential(x1,x2)
   REAL(dp), DIMENSION(:), INTENT(IN) :: x1,x2
   REAL(dp), DIMENSION(gp%nx) :: r
   REAL(dp) :: exponential, ril
-  r = ABS(x1 - x2)
-  ril = DOT_PRODUCT(r,gp%il)
+  r = (x1 - x2)*gp%il
+  ril = sqrt5*SQRT(DOT_PRODUCT(r,r))
   exponential = gp%var*EXP(-ril)
 END FUNCTION
 
@@ -239,15 +240,14 @@ PROGRAM main
 
   USE faerie
 
-  REAL(dp), DIMENSION(7), PARAMETER :: xnew = (/ 0.50532948, 0.29164443, &
-    0.7720734, 0.45070311, 0.16895283, 0.96262528, 0.96677354 /)
+  REAL(dp), DIMENSION(3), PARAMETER :: &
+    xnew = (/0.65830161,0.44783022,0.42735745/)
 
   CALL read_data()
 
   CALL cholesky_solve()
 
   CALL predict(xnew,ymean,yvar)
-
   PRINT *, ymean, yvar
 
   DEALLOCATE(gp%il,gp%x,gp%y,dist_bnds,lowtri,alpha)

@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Copy latest netcdf file here
+cp ../lpi_tests/gp.nc .
+
 # I/O fnames
 ifiles="faerie.f90"
 ofile="faerie"
