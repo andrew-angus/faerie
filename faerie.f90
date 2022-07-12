@@ -33,22 +33,23 @@ END INTERFACE
 ! GP object
 ! single y output, zero prior mean, for now
 TYPE gp_obj
-  REAL(dp) :: noise, var ! Gaussian noise and kernel variance
+  INTEGER(fi) :: nx,nsamps ! Number of inputs and samples
+  PROCEDURE(kernel), POINTER, NOPASS :: kern => NULL() ! Kernel function pointer
+  REAL(dp) :: noise, var ! Gaussian noise, kernel variance
+  REAL(dp) :: ymean, ystd ! Mean and std dev of y data for normalisation
   REAL(dp), DIMENSION(:), ALLOCATABLE :: il ! Inverse lengthscales
   REAL(dp), DIMENSION(:,:), ALLOCATABLE :: x ! Input samples
   REAL(dp), DIMENSION(:), ALLOCATABLE :: y ! Output samples
-  INTEGER(fi) :: nx,nsamps ! Number of inputs and samples
-  PROCEDURE(kernel), POINTER, NOPASS :: kern => NULL() ! Kernel function pointer
-  !PROCEDURE(xconvert), POINTER, NOPASS :: xcon => NULL()
-  !PROCEDURE(yconvert), POINTER, NOPASS :: ycon => NULL()
-  !PROCEDURE(xrevert), POINTER, NOPASS :: xrev => NULL()
-  !PROCEDURE(yrevert), POINTER, NOPASS :: yrev => NULL()
+  REAL(dp), DIMENSION(:,:), ALLOCATABLE :: xc ! Normalised input samples
+  REAL(dp), DIMENSION(:), ALLOCATABLE :: yc ! Normalised output samples
+  REAL(dp), DIMENSION(:), ALLOCATABLE :: xmean, xstd ! x data mean/ std dev
+
 END TYPE
 TYPE(gp_obj) :: gp
 
 ! Shared data
 INTEGER(fi) :: i,j,info
-REAL(dp), DIMENSION(:,:), ALLOCATABLE :: dist_bnds, y2d
+REAL(dp), DIMENSION(:,:), ALLOCATABLE :: y2d
 REAL(dp), DIMENSION(:), ALLOCATABLE :: lowtri, alpha
 REAL(dp) :: ymean, yvar
 
@@ -59,11 +60,10 @@ SUBROUTINE read_data()
 
   ! Known labels
   CHARACTER (LEN = *), PARAMETER :: fname = "gp.nc"
-  CHARACTER (LEN = *), DIMENSION(4), PARAMETER :: &
-    dimlabs = (/"inputs ","outputs","samples","bounds "/)
-  CHARACTER (LEN = *), DIMENSION(4), PARAMETER :: &
-    varlabs = (/"lengthscales  ","input_samples ","output_samples", &
-                "dist_bounds   "/)
+  CHARACTER (LEN = *), DIMENSION(3), PARAMETER :: &
+    dimlabs = (/"inputs ","outputs","samples"/)
+  CHARACTER (LEN = *), DIMENSION(3), PARAMETER :: &
+    varlabs = (/"lengthscales  ","input_samples ","output_samples"/)
 
   ! IDs and lengths
   INTEGER :: fid,attlen
@@ -83,20 +83,20 @@ SUBROUTINE read_data()
   CALL check(NF90_GET_ATT(fid,NF90_GLOBAL,"noise",gp%noise))
 
   ! Get dimension/variable IDs and lengths
-  DO i = 1, 4
+  DO i = 1, 3
     CALL check(NF90_INQ_DIMID(fid,TRIM(dimlabs(i)),dimids(i)))
     CALL check(NF90_INQUIRE_DIMENSION(fid,dimids(i),len=dimlens(i)))
     CALL check(NF90_INQ_VARID(fid,TRIM(varlabs(i)),varids(i)))
   END DO
 
-  ! Read variables
+  ! Allocate and read variables
   ALLOCATE(gp%il(dimlens(1)),gp%x(dimlens(3),dimlens(1)),y2d(dimlens(3),dimlens(2)))
-  ALLOCATE(lowtri(dimlens(3)*(dimlens(3)+1)/2),dist_bnds(dimlens(4),dimlens(1)))
-  ALLOCATE(gp%y(dimlens(3)),alpha(dimlens(3)))
+  ALLOCATE(gp%xc(dimlens(3),dimlens(1)),lowtri(dimlens(3)*(dimlens(3)+1)/2))
+  ALLOCATE(gp%y(dimlens(3)),gp%yc(dimlens(3)),alpha(dimlens(3)))
+  ALLOCATE(gp%xmean(dimlens(1)),gp%xstd(dimlens(1)))
   CALL check(NF90_GET_VAR(fid, varids(1), gp%il))
   CALL check(NF90_GET_VAR(fid, varids(2), gp%x))
   CALL check(NF90_GET_VAR(fid, varids(3), y2d))
-  CALL check(NF90_GET_VAR(fid, varids(4), dist_bnds))
 
   ! Close file
   CALL check(NF90_CLOSE(fid))
@@ -118,6 +118,9 @@ SUBROUTINE read_data()
     STOP "Read kernel name invalid: must be one of rbf, Mat52, Mat32, Exponential"
   END IF
 
+  ! Convert datasets
+  CALL full_convert()
+
   ! Deallocate temp arrays
   DEALLOCATE(kern,y2d)
   
@@ -135,6 +138,31 @@ SUBROUTINE check(stat)
 
 END SUBROUTINE
 
+! Convert full datasets and assign to GP object
+SUBROUTINE full_convert()
+
+  ! Get means and standard deviations
+  gp%ymean = mean(gp%y)
+  gp%ystd = std_dev(gp%y,gp%ymean)
+  DO i = 1, gp%nx
+    gp%xmean(i) = mean(gp%x(:,i))
+    gp%xstd(i) = std_dev(gp%x(:,i),gp%xmean(i))
+  END DO
+
+  ! y conversions
+  DO j = 1, gp%nsamps
+    gp%yc(j) = convert(gp%y(j),gp%ymean,gp%ystd)
+  END DO
+
+  ! x-conversions
+  DO i = 1, gp%nx
+    DO j = 1, gp%nsamps
+      gp%xc(j,i) = convert(gp%x(j,i),gp%xmean(i),gp%xstd(i))
+    END DO
+  END DO
+
+END SUBROUTINE
+
 ! Evaluate covariance matrix for input samples dataset
 SUBROUTINE data_covariances()
 
@@ -145,7 +173,7 @@ SUBROUTINE data_covariances()
   cnt = 1
   DO i = 1, gp%nsamps
     DO j = i, gp%nsamps
-      lowtri(cnt) = gp%kern(gp%x(i,:),gp%x(j,:)) 
+      lowtri(cnt) = gp%kern(gp%xc(i,:),gp%xc(j,:)) 
       IF (i == j) THEN
         ! Add noise on diagonal
         lowtri(cnt) = lowtri(cnt) + gp%noise
@@ -162,7 +190,7 @@ END SUBROUTINE
 SUBROUTINE cholesky_solve()
 
   ! Copy alpha array with y to be overwritten 
-  alpha = gp%y
+  alpha = gp%yc
 
   ! Obtain lower triangle of symmetric data covariance matrix
   CALL data_covariances()
@@ -183,7 +211,7 @@ SUBROUTINE predict(x,ypmean,ypvar)
 
   ! Get kstar
   DO i = 1, gp%nsamps
-    kstar(i) = gp%kern(gp%x(i,:),x)
+    kstar(i) = gp%kern(gp%xc(i,:),x)
   END DO
 
   ! Get mean prediction
@@ -230,8 +258,43 @@ FUNCTION exponential(x1,x2)
   exponential = gp%var*EXP(-ril)
 END FUNCTION
 
-! x conversion/reversion functions
-! only std_uniform for now
+! x/y conversion/reversion routines
+! only normalisation by mean and std deviation for now
+FUNCTION convert(a,amean,astd)
+
+  REAL(dp), INTENT(IN) :: a, amean, astd
+  REAL(dp) :: convert
+
+  convert = (a - amean)/astd
+
+END FUNCTION
+FUNCTION revert(a,amean,astd)
+
+  REAL(dp), INTENT(IN) :: a, amean, astd
+  REAL(dp) :: revert
+
+  revert = a*astd + amean
+
+END FUNCTION
+! Mean and std dev functions
+FUNCTION mean(a)
+
+  REAL(dp), DIMENSION(:), INTENT(IN) :: a
+  REAL(dp) :: mean
+
+  mean = SUM(a)/SIZE(a)
+
+END FUNCTION
+FUNCTION std_dev(a,amean)
+
+  REAL(dp), DIMENSION(:), INTENT(IN) :: a
+  REAL(dp), INTENT(IN) :: amean
+  REAL(dp) :: std_dev
+
+  std_dev = SQRT(SUM((a-amean)**2)/SIZE(a))
+
+END FUNCTION
+
 
 END MODULE
 
@@ -241,7 +304,7 @@ PROGRAM main
   USE faerie
 
   REAL(dp), DIMENSION(3), PARAMETER :: &
-    xnew = (/0.65830161,0.44783022,0.42735745/)
+    xnew = (/0.48058382,1.01261404,-1.00189514/)
 
   CALL read_data()
 
@@ -250,6 +313,7 @@ PROGRAM main
   CALL predict(xnew,ymean,yvar)
   PRINT *, ymean, yvar
 
-  DEALLOCATE(gp%il,gp%x,gp%y,dist_bnds,lowtri,alpha)
+  DEALLOCATE(gp%il,gp%x,gp%y,gp%xc,gp%yc,lowtri,alpha)
+  DEALLOCATE(gp%xmean,gp%xstd)
 
 END PROGRAM
