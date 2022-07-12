@@ -204,10 +204,15 @@ END SUBROUTINE
 ! Single x vector for now
 SUBROUTINE predict(x,ypmean,ypvar)
 
-  REAL(dp), DIMENSION(:), INTENT(IN) :: x
+  REAL(dp), DIMENSION(:), INTENT(INOUT) :: x
   REAL(dp), INTENT(OUT) :: ypmean, ypvar
 
   REAL(dp), DIMENSION(gp%nsamps) :: kstar
+
+  ! Convert x
+  DO i = 1, gp%nx
+    x(i) = convert(x(i),gp%xmean(i),gp%xstd(i))
+  END DO
 
   ! Get kstar
   DO i = 1, gp%nsamps
@@ -222,6 +227,10 @@ SUBROUTINE predict(x,ypmean,ypvar)
   
   ! Get variance prediction
   ypvar = gp%kern(x,x) - DOT_PRODUCT(kstar,kstar)
+
+  ! Revert y predictions
+  ypmean = revert(ypmean,gp%ymean,gp%ystd)
+  ypvar = ypvar*gp%ystd**2
 
 END SUBROUTINE
 
@@ -303,8 +312,9 @@ PROGRAM main
 
   USE faerie
 
-  REAL(dp), DIMENSION(3), PARAMETER :: &
-    xnew = (/0.48058382,1.01261404,-1.00189514/)
+  REAL(dp), DIMENSION(3) :: &
+    xnew = (/7.63838986e+07,1.90197926e+27,3.28797069e+15/)
+    !xnew = (/0.48058382,1.01261404,-1.00189514/)
 
   CALL read_data()
 
