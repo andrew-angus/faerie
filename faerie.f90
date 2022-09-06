@@ -6,6 +6,8 @@ USE NETCDF
 
 IMPLICIT NONE
 
+SAVE
+
 ! Parameters
 INTEGER, PARAMETER :: cd = C_DOUBLE
 INTEGER, PARAMETER :: ci = C_INT
@@ -43,7 +45,6 @@ TYPE gp_obj
   REAL(dp), DIMENSION(:,:), ALLOCATABLE :: xc ! Normalised input samples
   REAL(dp), DIMENSION(:), ALLOCATABLE :: yc ! Normalised output samples
   REAL(dp), DIMENSION(:), ALLOCATABLE :: xmean, xstd ! x data mean/ std dev
-
 END TYPE
 TYPE(gp_obj) :: gp
 
@@ -56,10 +57,10 @@ REAL(dp) :: ymean, yvar
 CONTAINS
 
 ! Read in dataset, distributions, and gp params from NetCDF file
-SUBROUTINE read_data()
+SUBROUTINE read_data(fname)
 
   ! Known labels
-  CHARACTER (LEN = *), PARAMETER :: fname = "gp.nc"
+  CHARACTER (LEN = *), INTENT(IN) :: fname
   CHARACTER (LEN = *), DIMENSION(3), PARAMETER :: &
     dimlabs = (/"inputs ","outputs","samples"/)
   CHARACTER (LEN = *), DIMENSION(3), PARAMETER :: &
@@ -316,7 +317,7 @@ PROGRAM main
     xnew = (/7.63838986e+07,1.90197926e+27,3.28797069e+15/)
     !xnew = (/0.48058382,1.01261404,-1.00189514/)
 
-  CALL read_data()
+  CALL read_data('gp.nc')
 
   CALL cholesky_solve()
 
