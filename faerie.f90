@@ -205,19 +205,20 @@ END SUBROUTINE
 ! Single x vector for now
 SUBROUTINE predict(x,ypmean,ypvar)
 
-  REAL(dp), DIMENSION(:), INTENT(INOUT) :: x
+  REAL(dp), DIMENSION(:), INTENT(IN) :: x
+  REAL(dp), DIMENSION(SIZE(x)) :: xconv
   REAL(dp), INTENT(OUT) :: ypmean, ypvar
 
   REAL(dp), DIMENSION(gp%nsamps) :: kstar
 
   ! Convert x
   DO i = 1, gp%nx
-    x(i) = convert(x(i),gp%xmean(i),gp%xstd(i))
+    xconv(i) = convert(x(i),gp%xmean(i),gp%xstd(i))
   END DO
 
   ! Get kstar
   DO i = 1, gp%nsamps
-    kstar(i) = gp%kern(gp%xc(i,:),x)
+    kstar(i) = gp%kern(gp%xc(i,:),xconv)
   END DO
 
   ! Get mean prediction
@@ -227,7 +228,7 @@ SUBROUTINE predict(x,ypmean,ypvar)
   CALL dtpsv('L','N','N',gp%nsamps,lowtri,kstar,1)
   
   ! Get variance prediction
-  ypvar = gp%kern(x,x) - DOT_PRODUCT(kstar,kstar)
+  ypvar = gp%kern(xconv,xconv) - DOT_PRODUCT(kstar,kstar)
 
   ! Revert y predictions
   ypmean = revert(ypmean,gp%ymean,gp%ystd)
