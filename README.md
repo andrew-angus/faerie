@@ -1,5 +1,5 @@
 # faerie
-Gaussian process regression code in Fortran
+Gaussian process regression in Fortran
 
 Capablities:
 
