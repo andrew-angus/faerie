@@ -16,6 +16,14 @@ Lacks:
 - Optimisation of hyperparameters; this is best handled by external python libraries (such as PyMC) and interfaced with faerie via the netCDF input file
 - Multi-output predictions
 
+## Guide to use
+
+- Write netCDF file with python script in format specified below
+- Use and compile Fortran code with faerie module
+- Initialise an instance of gp_obj derived type
+- Call read_gp routine, passing 2 arguments: path to netCDF file and gp_obj instance
+- Call predict routine where desired, passing 4 arguments: gp_obj instance, prediction points, output means, and output variances
+
 ## netCDF file format
 
 Global attributes:
